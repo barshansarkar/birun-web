@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>birun — a task runner with a real language</title>
+<meta name="description" content="birun is a task runner for people who write code, not configuration. Built on the bi language. Content-hash caching. True parallelism. One static binary." />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700;9..144,900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        // Warm, weathered, mature
+        ink:      '#14100d',   // deepest background
+        bg:       '#1c1814',   // main background
+        bg2:      '#221c17',   // alternate sections
+        surface:  '#2a231d',   // cards
+        surface2: '#332a22',   // hover states
+        border:   '#3d332a',   // borders
+        border2:  '#514438',   // stronger borders
+
+        cream:    '#ece3d4',   // primary text
+        parchment:'#d9cdb9',   // slightly dimmer text
+        sand:     '#a89785',   // body text
+        stone:    '#7a6b5d',   // muted
+        ember:    '#5a4d42',   // dimmest
+
+        rust:     '#c25a3c',   // primary accent — burnt orange
+        copper:   '#d97742',   // brighter accent
+        amber:    '#d4a35c',   // warm gold
+        gold:     '#e5c07b',   // light gold
+        sage:     '#8ba368',   // muted green
+        olive:    '#6b7a4a',   // darker green
+        wine:     '#9c4a44',   // deep red
+        rust2:    '#a8492f',   // darker rust
+      },
+      fontFamily: {
+        serif: ['Fraunces', 'Georgia', 'serif'],
+        sans:  ['Inter', 'system-ui', 'sans-serif'],
+        mono:  ['JetBrains Mono', 'ui-monospace', 'monospace'],
+      },
+    },
+  },
+};
+</script>
+
+<style>
+  html { background: #14100d; }
+  body { font-family: 'Inter', sans-serif; }
+
+  ::selection { background: #c25a3c; color: #ece3d4; }
+
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: #1c1814; }
+  ::-webkit-scrollbar-thumb { background: #3d332a; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #514438; }
+
+  /* Subtle paper texture */
+  .paper::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(194,90,60,0.04) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(212,163,92,0.03) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  /* Vignette for dark sections */
+  .vignette::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(20,16,13,0.6) 100%);
+    pointer-events: none;
+  }
+
+  /* Hand-drawn underline effect for section titles */
+  .rough-underline {
+    position: relative;
+    display: inline-block;
+  }
+  .rough-underline::after {
+    content: '';
+    position: absolute;
+    left: -4px;
+    right: -4px;
+    bottom: 4px;
+    height: 6px;
+    background: rgba(194,90,60,0.3);
+    transform: skewX(-8deg);
+    z-index: -1;
+  }
+
+  /* Reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(20px); transition: all 0.8s cubic-bezier(0.22,1,0.36,1); }
+  .reveal.in { opacity: 1; transform: translateY(0); }
+
+  /* Warm glow for hero */
+  .warm-glow::before {
+    content: '';
+    position: absolute;
+    top: -10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1100px;
+    height: 800px;
+    background: radial-gradient(ellipse, rgba(194,90,60,0.18) 0%, rgba(212,163,92,0.08) 30%, transparent 65%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Dotted line divider */
+  .dot-divider {
+    background-image: radial-gradient(circle, #3d332a 1px, transparent 1px);
+    background-size: 8px 8px;
+    height: 1px;
+    opacity: 0.6;
+  }
+
+  /* Emphasized text */
+  .ember-text {
+    color: #d97742;
+    font-weight: 500;
+  }
+
+  /* Serif display */
+  .display {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+  }
+
+  /* Quote marks */
+  .quote::before { content: '"'; }
+  .quote::after  { content: '"'; }
+</style>
+</head>
+<body class="bg-ink text-cream antialiased overflow-x-hidden">
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- NAVBAR -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<nav class="fixed top-0 inset-x-0 z-50 backdrop-blur-md bg-ink/85 border-b border-border/60">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <a href="#" class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded bg-rust flex items-center justify-center">
+        <span class="display font-bold text-cream text-lg leading-none">b</span>
+      </div>
+      <span class="display font-medium text-lg">birun</span>
+      <span class="hidden sm:inline text-[10px] font-mono px-2 py-0.5 rounded-sm bg-surface text-sand border border-border">v0.6.2</span>
+    </a>
+
+    <div class="hidden md:flex items-center gap-7 text-sm">
+      <a href="#story"      class="text-sand hover:text-cream transition-colors">Story</a>
+      <a href="#craft"      class="text-sand hover:text-cream transition-colors">Craft</a>
+      <a href="#install"    class="text-sand hover:text-cream transition-colors">Install</a>
+      <a href="#usage"      class="text-sand hover:text-cream transition-colors">Usage</a>
+      <a href="#compare"    class="text-sand hover:text-cream transition-colors">Compare</a>
+      <a href="#faq"        class="text-sand hover:text-cream transition-colors">FAQ</a>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <a href="https://github.com/barshansarkar/birun" target="_blank"
+         class="hidden sm:flex items-center gap-2 text-sm text-sand hover:text-cream transition-colors">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.31.678.921.678 1.856 0 1.34-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/></svg>
+        <span>GitHub</span>
+      </a>
+      <a href="#install" class="text-sm font-medium px-4 py-2 rounded bg-rust hover:bg-copper text-cream transition-colors">
+        Get started
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- HERO -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section class="relative pt-36 pb-28 px-6 warm-glow overflow-hidden">
+  <div class="max-w-4xl mx-auto relative z-10 text-center">
+
+    <div class="mb-8 flex justify-center">
+      <a href="https://github.com/barshansarkar/birun/releases" target="_blank"
+         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface/70 border border-border hover:border-rust/50 transition-colors text-xs font-mono text-sand">
+        <span class="w-1.5 h-1.5 rounded-full bg-sage"></span>
+        v0.6.2 — quietly building in the corner
+      </a>
+    </div>
+
+    <h1 class="display text-5xl sm:text-6xl lg:text-7xl font-medium leading-[1.05] mb-8 text-cream">
+      A task runner for people<br/>
+      who write <span class="italic font-normal text-copper">code</span>,<br/>
+      not configuration.
+    </h1>
+
+    <p class="text-lg text-sand leading-relaxed max-w-2xl mx-auto mb-12">
+      birun is what happens when you stop pretending that YAML is a programming language. You describe your tasks in <span class="ember-text">bi</span> — a small, honest scripting language with <em class="not-italic text-cream">real</em> conditionals, <em class="not-italic text-cream">real</em> loops, and <em class="not-italic text-cream">real</em> functions. Then birun runs them quickly, correctly, and with caching that doesn't lie to you.
+    </p>
+
+    <div class="flex justify-center mb-8">
+      <div class="group relative max-w-2xl w-full">
+        <div class="relative flex items-center gap-3 bg-surface border border-border rounded-md px-5 py-4 hover:border-border2 transition-colors">
+          <span class="text-rust font-mono text-sm select-none">$</span>
+          <code id="install-cmd" class="flex-1 text-sm font-mono text-parchment overflow-x-auto whitespace-nowrap select-all text-left">curl -fsSL https://raw.githubusercontent.com/barshansarkar/birun/main/install.sh | sh</code>
+          <button onclick="copyInstall()" class="shrink-0 p-2 rounded hover:bg-surface2 transition-colors" title="Copy">
+            <svg id="copy-icon" class="w-4 h-4 text-sand" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-wrap justify-center gap-3 text-sm">
+      <a href="https://github.com/barshansarkar/birun" target="_blank"
+         class="inline-flex items-center gap-2 px-5 py-2.5 rounded bg-rust hover:bg-copper text-cream font-medium transition-colors">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.31.678.921.678 1.856 0 1.34-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/></svg>
+        Read the source
+      </a>
+      <a href="#usage"
+         class="inline-flex items-center gap-2 px-5 py-2.5 rounded border border-border hover:border-border2 text-parchment transition-colors">
+        See it in use
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+      </a>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- THE STORY — long-form text -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="story" class="relative px-6 py-24 bg-bg2 paper">
+  <div class="max-w-3xl mx-auto relative">
+
+    <div class="text-center mb-14">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">Chapter one</p>
+      <h2 class="display text-4xl sm:text-5xl font-medium leading-tight mb-4">
+        Every project grows<br/>a <span class="rough-underline italic font-normal">weird little script</span>.
+      </h2>
+    </div>
+
+    <div class="space-y-6 text-sand leading-[1.8] text-[17px]">
+
+      <p>
+        First it's one file. <code class="text-amber font-mono text-sm">run.sh</code>. Six lines. Someone adds a flag, someone else adds a dependency, and by month three you have a directory named <code class="text-amber font-mono text-sm">scripts/</code> with fourteen files, each one sourcing the last, each one half-broken, none of them documented. Anyone who wants to run the tests has to read a shell script to figure out which one is the "real" one.
+      </p>
+
+      <p>
+        So the sensible teams migrate. They move to <code class="text-amber font-mono text-sm">Makefile</code> and discover tabs. They move to <code class="text-amber font-mono text-sm">package.json</code> scripts and discover that a JSON file has become their build system. They move to <code class="text-amber font-mono text-sm">just</code> or <code class="text-amber font-mono text-sm">task</code> and discover that everything is fine until someone needs an <em class="not-italic text-cream">if</em>.
+      </p>
+
+      <p class="text-cream text-lg italic font-serif">
+        "Can we skip the deploy on a dry run?"<br/>
+        "Can we only run the linter if the config changed?"<br/>
+        "Can we build for arm64 when we're on CI but x86_64 locally?"
+      </p>
+
+      <p>
+        And every time, the answer is the same. You bolt on another script. You write the condition in shell. You repeat yourself in three places. The build system, once again, becomes a small private language that nobody else can read.
+      </p>
+
+      <p class="text-parchment">
+        <span class="text-copper font-medium">birun is a different answer to that question.</span> Not "let's add a plugin." Not "let's write it in JavaScript." Not "let's embed Python and hope." The answer is: <em class="not-italic text-cream">what if the build system had a language, and the language was small enough that everyone could learn it in an afternoon?</em>
+      </p>
+
+      <p>
+        That language is <span class="ember-text">bi</span>. It has variables. It has <code class="text-amber font-mono text-sm">if</code> and <code class="text-amber font-mono text-sm">else</code>. It has <code class="text-amber font-mono text-sm">for</code> loops, both C-style and <code class="text-amber font-mono text-sm">for-in</code>. It has functions and closures. It has arrays and maps. And that is <em class="not-italic text-cream">all</em> it has. There is no module system to learn, no standard library to memorize, no package registry to argue about. Everything else — the shell commands, the file checks, the environment reads — you already know.
+      </p>
+
+      <div class="my-12 py-8 px-6 border-l-2 border-rust/60 bg-surface/40 rounded-r">
+        <p class="text-cream text-lg leading-relaxed italic font-serif">
+          A build file should read like a recipe, not like a contract. It should tell you what it does when you look at it, not what it <span class="text-copper">might</span> do after seven layers of inheritance.
+        </p>
+      </div>
+
+      <p>
+        birun is not the first tool to think this. <code class="text-amber font-mono text-sm">mage</code> said it — but only if you already write Go. <code class="text-amber font-mono text-sm">mask</code> said it — but Markdown is not a language, it's a mood. birun's bet is simpler: a small purpose-built language is worth more than a large general-purpose one for the specific job of describing build steps.
+      </p>
+
+      <p>
+        That's it. That's the whole story. If it resonates with you, the rest of this page tells you what birun actually does and how it differs from the tools you might already know. If it doesn't, that's fine too — <span class="text-parchment">make still works, and it always will.</span>
+      </p>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- TERMINAL PREVIEW -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section class="px-6 py-20 bg-bg">
+  <div class="max-w-3xl mx-auto reveal">
+    <div class="text-center mb-10">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">A quiet demonstration</p>
+      <h3 class="display text-3xl font-medium text-cream">Three tasks. One of them cached.</h3>
+    </div>
+
+    <div class="rounded-lg overflow-hidden border border-border bg-ink">
+      <div class="flex items-center gap-2 px-4 py-2.5 bg-surface border-b border-border">
+        <div class="flex gap-1.5">
+          <div class="w-2.5 h-2.5 rounded-full bg-wine"></div>
+          <div class="w-2.5 h-2.5 rounded-full bg-amber"></div>
+          <div class="w-2.5 h-2.5 rounded-full bg-sage"></div>
+        </div>
+        <div class="flex-1 text-center text-[11px] text-ember font-mono">~/projects/myapp — birun</div>
+      </div>
+      <div class="p-6 font-mono text-[13px] leading-[1.9]">
+        <div><span class="text-ember">$</span> <span class="text-cream">birun build</span></div>
+        <div class="mt-3"><span class="text-ember">[1/3]</span> <span class="text-rust">●</span> <span class="text-cream font-medium">hello</span> <span class="text-stone">Say hello</span></div>
+        <div class="text-stone ml-7">→ echo 'hello from birun'</div>
+        <div class="text-parchment">hello from birun</div>
+        <div><span class="text-sage">✓</span> <span class="text-cream font-medium">hello</span> <span class="text-ember">2ms</span></div>
+        <div class="mt-3"><span class="text-ember">[2/3]</span> <span class="text-rust">●</span> <span class="text-cream font-medium">compile</span> <span class="text-stone">Compile sources</span></div>
+        <div class="text-stone ml-7">→ cargo build --release</div>
+        <div class="text-stone ml-7">Compiling myapp v0.1.0</div>
+        <div class="text-stone ml-7">Finished release [optimized]</div>
+        <div><span class="text-sage">✓</span> <span class="text-cream font-medium">compile</span> <span class="text-ember">2.41s</span></div>
+        <div class="mt-3"><span class="text-ember">[3/3]</span> <span class="text-sage">✓</span> <span class="text-cream font-medium">test</span> <span class="text-stone italic">cached</span></div>
+        <div class="mt-4 text-stone">⏱ total 2.43s</div>
+        <div><span class="text-ember">$</span> <span class="text-cream animate-pulse">▊</span></div>
+      </div>
+    </div>
+
+    <p class="text-center text-sm text-stone mt-6 max-w-xl mx-auto leading-relaxed">
+      The third task didn't run because its inputs — and its own definition — hadn't changed. That is the whole idea: <span class="text-parchment">if nothing moved, nothing runs.</span>
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- CRAFT — features described with weight -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="craft" class="px-6 py-24 bg-bg2">
+  <div class="max-w-5xl mx-auto">
+
+    <div class="text-center mb-16 reveal">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">Chapter two</p>
+      <h2 class="display text-4xl sm:text-5xl font-medium mb-4">What's actually inside.</h2>
+      <p class="text-sand max-w-2xl mx-auto leading-relaxed">
+        Every feature below exists because a real build broke without it. Nothing here is aspirational — it all ships in the binary you downloaded two minutes ago.
+      </p>
+    </div>
+
+    <div class="space-y-4">
+
+      <!-- Feature 1 -->
+      <div class="reveal grid md:grid-cols-12 gap-6 p-7 rounded-lg bg-surface border border-border hover:border-border2 transition-colors">
+        <div class="md:col-span-4">
+          <div class="text-xs font-mono text-ember uppercase tracking-widest mb-2">01 — Language</div>
+          <h3 class="display text-2xl font-medium text-cream">A tiny language that respects your time.</h3>
+        </div>
+        <div class="md:col-span-8 text-sand leading-[1.75] space-y-3">
+          <p>
+            <span class="ember-text">bi</span> is small on purpose. Variables, conditionals, loops, functions, arrays, maps. If you have written JavaScript or Python for a week, you can read it fluently. If you have never written either, you can learn the whole language in fifteen minutes.
+          </p>
+          <p>
+            It compiles to nothing — it's interpreted directly from your <code class="text-amber font-mono text-sm">birun.bi</code> file each run, so there is no build step to your build step. The parse is fast enough to be invisible; even a thousand-line config loads before your finger leaves the Enter key.
+          </p>
+        </div>
+      </div>
+
+      <!-- Feature 2 -->
+      <div class="reveal grid md:grid-cols-12 gap-6 p-7 rounded-lg bg-surface border border-border hover:border-border2 transition-colors">
+        <div class="md:col-span-4">
+          <div class="text-xs font-mono text-ember uppercase tracking-widest mb-2">02 — Caching</div>
+          <h3 class="display text-2xl font-medium text-cream">Content hashes, not timestamps.</h3>
+        </div>
+        <div class="md:col-span-8 text-sand leading-[1.75] space-y-3">
+          <p>
+            Make uses file modification times. That means a fresh <code class="text-amber font-mono text-sm">git clone</code> looks "newer" than the build output it shipped with, and everything rebuilds for no reason. It also means that if you restore an old file from backup, Make will quietly skip the rebuild you actually needed.
+          </p>
+          <p>
+            birun hashes the <em class="not-italic text-cream">contents</em> of every file you list in <code class="text-amber font-mono text-sm">inputs()</code>, along with the task's own definition — its commands, its description, its dependencies. If a single byte changed, the task reruns. If nothing changed, it doesn't. Simple and honest.
+          </p>
+          <div class="mt-4 py-3 px-4 bg-bg2 rounded border-l-2 border-sage/60 text-sm">
+            <span class="text-sage font-medium">Result:</span> <span class="text-parchment">Switch branches, check out old commits, restore from backup — cache stays correct.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 3 -->
+      <div class="reveal grid md:grid-cols-12 gap-6 p-7 rounded-lg bg-surface border border-border hover:border-border2 transition-colors">
+        <div class="md:col-span-4">
+          <div class="text-xs font-mono text-ember uppercase tracking-widest mb-2">03 — Parallelism</div>
+          <h3 class="display text-2xl font-medium text-cream">Real threads. Real speedup.</h3>
+        </div>
+        <div class="md:col-span-8 text-sand leading-[1.75] space-y-3">
+          <p>
+            birun reads your dependency graph, works out which tasks are ready, and runs them on a thread pool. <code class="text-amber font-mono text-sm">-j8</code> means eight tasks running at once, not eight tasks queued on one worker.
+          </p>
+          <p>
+            Each task's output is buffered privately and written atomically when the task finishes, so two parallel tasks never confuse each other's stdout. You get the speed of concurrency without the garbled terminal you'd get from plain <code class="text-amber font-mono text-sm">&amp;</code>.
+          </p>
+          <div class="mt-4 grid grid-cols-4 gap-3 text-center">
+            <div class="py-2 rounded bg-bg2 border border-border">
+              <div class="display text-xl text-copper">1.00×</div>
+              <div class="text-[10px] font-mono text-ember mt-1">-j1</div>
+            </div>
+            <div class="py-2 rounded bg-bg2 border border-border">
+              <div class="display text-xl text-copper">1.99×</div>
+              <div class="text-[10px] font-mono text-ember mt-1">-j2</div>
+            </div>
+            <div class="py-2 rounded bg-bg2 border border-border">
+              <div class="display text-xl text-copper">3.98×</div>
+              <div class="text-[10px] font-mono text-ember mt-1">-j4</div>
+            </div>
+            <div class="py-2 rounded bg-bg2 border border-border">
+              <div class="display text-xl text-copper">7.81×</div>
+              <div class="text-[10px] font-mono text-ember mt-1">-j8</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature 4 -->
+      <div class="reveal grid md:grid-cols-12 gap-6 p-7 rounded-lg bg-surface border border-border hover:border-border2 transition-colors">
+        <div class="md:col-span-4">
+          <div class="text-xs font-mono text-ember uppercase tracking-widest mb-2">04 — Watch</div>
+          <h3 class="display text-2xl font-medium text-cream">Save file, watch task run.</h3>
+        </div>
+        <div class="md:col-span-8 text-sand leading-[1.75] space-y-3">
+          <p>
+            <code class="text-amber font-mono text-sm">birun --watch test</code> polls your project for changes and re-runs the moment something moves. It skips the obvious noise: <code class="text-amber font-mono text-sm">.git</code>, <code class="text-amber font-mono text-sm">node_modules</code>, <code class="text-amber font-mono text-sm">target</code>, <code class="text-amber font-mono text-sm">build</code>, <code class="text-amber font-mono text-sm">.venv</code>, <code class="text-amber font-mono text-sm">__pycache__</code>. And it only watches extensions that could plausibly matter — no rebuild trigger from a stray <code class="text-amber font-mono text-sm">.log</code> file.
+          </p>
+          <p>
+            Rapid saves are debounced. If your editor writes three files in fifty milliseconds, you get one build, not three. If your config becomes syntactically invalid, birun prints the error and keeps watching — a broken save doesn't kill your session.
+          </p>
+        </div>
+      </div>
+
+      <!-- Feature 5 -->
+      <div class="reveal grid md:grid-cols-12 gap-6 p-7 rounded-lg bg-surface border border-border hover:border-border2 transition-colors">
+        <div class="md:col-span-4">
+          <div class="text-xs font-mono text-ember uppercase tracking-widest mb-2">05 — Distribution</div>
+          <h3 class="display text-2xl font-medium text-cream">One file. No runtime.</h3>
+        </div>
+        <div class="md:col-span-8 text-sand leading-[1.75] space-y-3">
+          <p>
+            birun is a single statically-linked C++ binary. Around two hundred kilobytes stripped. It has no dependency on Node, Python, the JVM, or a system package manager. It runs on any Linux from the last decade and any macOS since Catalina.
+          </p>
+          <p>
+            That matters more than it sounds. Every tool that requires a runtime has to justify the runtime's cost. birun doesn't. You curl it once, put it in your PATH, and it exists — on your laptop, on the build server, in a container that only has <code class="text-amber font-mono text-sm">sh</code> and <code class="text-amber font-mono text-sm">coreutils</code>, anywhere.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- INSTALL -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="install" class="px-6 py-24 bg-bg">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-center mb-14 reveal">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">Getting it</p>
+      <h2 class="display text-4xl sm:text-5xl font-medium mb-4">Install in a single line.</h2>
+      <p class="text-sand max-w-xl mx-auto leading-relaxed">
+        The one-liner below downloads the correct binary for your platform, verifies it, and puts it in <code class="text-amber font-mono text-sm">~/.local/bin</code>. If that directory isn't already on your PATH, it tells you how to add it.
+      </p>
+    </div>
+
+    <div class="space-y-5">
+
+      <div class="reveal rounded-lg bg-surface border border-border p-6">
+        <div class="flex items-start gap-4">
+          <div class="shrink-0 w-10 h-10 rounded bg-rust/20 flex items-center justify-center text-rust font-mono text-sm">01</div>
+          <div class="flex-1 min-w-0">
+            <h3 class="font-medium text-cream mb-2">Linux and macOS</h3>
+            <p class="text-sm text-sand mb-4 leading-relaxed">
+              Works on x86_64 and aarch64 for both platforms. The script picks the right build automatically.
+            </p>
+            <div class="rounded bg-ink border border-border p-3 font-mono text-xs overflow-x-auto">
+              <code class="text-parchment whitespace-nowrap">curl -fsSL https://raw.githubusercontent.com/barshansarkar/birun/main/install.sh | sh</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="reveal rounded-lg bg-surface border border-border p-6">
+        <div class="flex items-start gap-4">
+          <div class="shrink-0 w-10 h-10 rounded bg-amber/20 flex items-center justify-center text-amber font-mono text-sm">02</div>
+          <div class="flex-1 min-w-0">
+            <h3 class="font-medium text-cream mb-2">Build from source</h3>
+            <p class="text-sm text-sand mb-4 leading-relaxed">
+              Requires CMake 3.16+ and any C++17 compiler. Takes about ninety seconds on a modern laptop.
+            </p>
+            <div class="rounded bg-ink border border-border p-3 font-mono text-xs overflow-x-auto">
+<pre class="text-parchment whitespace-pre leading-relaxed">git clone https://github.com/barshansarkar/birun
+cd birun
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+sudo cmake --install build</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="reveal rounded-lg bg-surface border border-border p-6">
+        <div class="flex items-start gap-4">
+          <div class="shrink-0 w-10 h-10 rounded bg-sage/20 flex items-center justify-center text-sage">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-medium text-cream mb-2">Then check</h3>
+            <div class="rounded bg-ink border border-border p-3 font-mono text-xs">
+              <div><span class="text-ember">$</span> <span class="text-cream">birun --version</span></div>
+              <div class="text-sage mt-1">birun 0.6.2</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- USAGE -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="usage" class="px-6 py-24 bg-bg2">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-center mb-16 reveal">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">Chapter three</p>
+      <h2 class="display text-4xl sm:text-5xl font-medium mb-4">From an empty folder<br/>to a working pipeline.</h2>
+      <p class="text-sand max-w-xl mx-auto leading-relaxed">
+        The rest of this section walks through a real configuration — small enough to read in one sitting, complete enough to ship to CI.
+      </p>
+    </div>
+
+    <div class="space-y-12">
+
+      <!-- Step 1 -->
+      <div class="reveal">
+        <div class="flex items-baseline gap-4 mb-4">
+          <div class="display text-3xl text-rust">01</div>
+          <h3 class="display text-2xl font-medium">Start a new project file.</h3>
+        </div>
+        <p class="text-sand leading-[1.75] mb-4">
+          <code class="text-amber font-mono text-sm">birun --init</code> writes a small <code class="text-amber font-mono text-sm">birun.bi</code> into the current directory. It contains four example tasks you can delete or keep. There is no hidden state, no lock file, no metadata directory — just one file you own.
+        </p>
+        <div class="rounded-lg bg-ink border border-border p-4 font-mono text-xs overflow-x-auto">
+          <div><span class="text-ember">$</span> <span class="text-cream">birun --init</span></div>
+          <div class="text-sage mt-1">created birun.bi</div>
+          <div class="mt-2 text-ember">$ ls</div>
+          <div class="text-parchment">birun.bi</div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="reveal">
+        <div class="flex items-baseline gap-4 mb-4">
+          <div class="display text-3xl text-rust">02</div>
+          <h3 class="display text-2xl font-medium">Describe your tasks.</h3>
+        </div>
+        <p class="text-sand leading-[1.75] mb-4">
+          A task is declared with <code class="text-amber font-mono text-sm">route TASK "/name" { ... }</code>. Inside the block you call builtins that describe what the task <em class="not-italic text-cream">is</em>. The block is real code, so anything that computes — <code class="text-amber font-mono text-sm">if</code>, <code class="text-amber font-mono text-sm">for</code>, function calls — works exactly as you would expect.
+        </p>
+        <div class="rounded-lg bg-ink border border-border p-4 font-mono text-xs overflow-x-auto">
+<pre class="text-parchment leading-relaxed">let mgr  = <span class="text-amber">pkg</span>()
+let isCI = <span class="text-amber">inCI</span>()
+
+<span class="text-rust">route</span> <span class="text-copper">TASK</span> <span class="text-sage">"/build"</span> {
+    <span class="text-amber">desc</span>(<span class="text-sage">"Compile the project"</span>)
+    <span class="text-amber">inputs</span>(<span class="text-sage">"src/**/*.rs"</span>, <span class="text-sage">"Cargo.toml"</span>)
+    <span class="text-amber">outputs</span>(<span class="text-sage">"target/release/app"</span>)
+
+    <span class="text-rust">if</span> (mgr == <span class="text-sage">"cargo"</span>) {
+        <span class="text-amber">run</span>(<span class="text-sage">"cargo build --release"</span>)
+    } <span class="text-rust">else if</span> (mgr == <span class="text-sage">"npm"</span>) {
+        <span class="text-amber">run</span>(<span class="text-sage">"npm run build"</span>)
+    } <span class="text-rust">else</span> {
+        <span class="text-amber">run</span>(<span class="text-sage">"echo 'no build system detected'"</span>)
+    }
+
+    <span class="text-rust">if</span> (isCI) {
+        <span class="text-amber">run</span>(<span class="text-sage">"echo 'running in CI mode'"</span>)
+    }
+}
+
+<span class="text-rust">route</span> <span class="text-copper">TASK</span> <span class="text-sage">"/test"</span> {
+    <span class="text-amber">desc</span>(<span class="text-sage">"Run the test suite"</span>)
+    <span class="text-amber">depends</span>(<span class="text-sage">"build"</span>)
+    <span class="text-amber">run</span>(<span class="text-sage">"cargo test"</span>)
+}</pre>
+        </div>
+        <p class="text-sm text-stone mt-3 leading-relaxed">
+          Note the second task only names one thing — it depends on <code class="text-amber font-mono text-sm">build</code>. birun figures out the correct order from that. You never write the sequence by hand.
+        </p>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="reveal">
+        <div class="flex items-baseline gap-4 mb-4">
+          <div class="display text-3xl text-rust">03</div>
+          <h3 class="display text-2xl font-medium">Look before you leap.</h3>
+        </div>
+        <p class="text-sand leading-[1.75] mb-4">
+          <code class="text-amber font-mono text-sm">--dry-run</code> shows what would run without executing anything. <code class="text-amber font-mono text-sm">--verbose</code> prints the reason each task ran or was skipped. Use them together when you're trying to figure out why a cache is or isn't hitting.
+        </p>
+        <div class="rounded-lg bg-ink border border-border p-4 font-mono text-xs overflow-x-auto">
+<pre class="text-parchment leading-relaxed"><span class="text-ember">$</span> birun --dry-run test
+  <span class="text-rust">⚡</span> would execute 2 task(s)
+   1  <span class="text-ember">○</span> <span class="text-cream">build</span>   Compile the project
+   2  <span class="text-ember">○</span> <span class="text-cream">test</span>    Run the test suite
+
+<span class="text-ember">$</span> birun --verbose build
+  <span class="text-rust">⚡</span> plan · 1 task(s) · jobs=1 · cache=on
+  <span class="text-sage">✓</span> cache hit b31dc6a95a43
+  <span class="text-sage">✓</span> <span class="text-cream">build</span>   cached</pre>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="reveal">
+        <div class="flex items-baseline gap-4 mb-4">
+          <div class="display text-3xl text-rust">04</div>
+          <h3 class="display text-2xl font-medium">Watch, then walk away.</h3>
+        </div>
+        <p class="text-sand leading-[1.75] mb-4">
+          For the inner development loop, <code class="text-amber font-mono text-sm">--watch</code> is the difference between context-switching every thirty seconds and staying in flow. Save your file, look at the terminal, see the result. That's the whole interaction.
+        </p>
+        <div class="rounded-lg bg-ink border border-border p-4 font-mono text-xs overflow-x-auto">
+<pre class="text-parchment leading-relaxed"><span class="text-ember">$</span> birun --watch test
+  <span class="text-amber">⚡</span> change detected · 2 file(s)
+      <span class="text-ember">•</span> src/main.rs
+      <span class="text-ember">•</span> Cargo.toml
+  <span class="text-sage">✓</span> build   2.41s
+  <span class="text-sage">✓</span> test    0.82s</pre>
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div class="reveal">
+        <div class="flex items-baseline gap-4 mb-4">
+          <div class="display text-3xl text-rust">05</div>
+          <h3 class="display text-2xl font-medium">Drop it into CI.</h3>
+        </div>
+        <p class="text-sand leading-[1.75] mb-4">
+          The install line works inside any runner. Because birun is quiet when it succeeds and loud when it fails, you can pass <code class="text-amber font-mono text-sm">--quiet</code> and get a CI log that only has content when something is wrong.
+        </p>
+        <div class="rounded-lg bg-ink border border-border p-4 font-mono text-xs overflow-x-auto">
+<pre class="text-parchment leading-relaxed"><span class="text-ember"># .github/workflows/build.yml</span>
+<span class="text-rust">- name</span>: Install birun
+  <span class="text-rust">run</span>: <span class="text-parchment">curl -fsSL https://raw.githubusercontent.com/barshansarkar/birun/main/install.sh | sh</span>
+
+<span class="text-rust">- name</span>: Run CI
+  <span class="text-rust">run</span>: <span class="text-parchment">~/.local/bin/birun -j4 --quiet ci</span></pre>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- CLI REFERENCE -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section class="px-6 py-24 bg-bg">
+  <div class="max-w-4xl mx-auto">
+    <div class="text-center mb-14 reveal">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">Reference</p>
+      <h2 class="display text-4xl sm:text-5xl font-medium mb-4">The complete command set.</h2>
+      <p class="text-sand max-w-xl mx-auto leading-relaxed">
+        Fifteen flags total. That number is not a coincidence — every one earns its place, or it would have been cut.
+      </p>
+    </div>
+
+    <div class="reveal space-y-1 font-mono text-sm">
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border">
+        <div class="text-xs text-ember uppercase tracking-widest font-sans">Command</div>
+        <div class="text-xs text-ember uppercase tracking-widest font-sans">Purpose</div>
+      </div>
+
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">birun &lt;task&gt;</div>
+        <div class="text-sand font-sans text-sm">Run the task and everything it depends on.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">-l, --list</div>
+        <div class="text-sand font-sans text-sm">Print every task, with descriptions and dependencies.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">-n, --dry-run</div>
+        <div class="text-sand font-sans text-sm">Show the plan without executing any command.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">-j, --jobs N</div>
+        <div class="text-sand font-sans text-sm">Run up to N tasks in parallel. <code class="text-amber">-j 4</code> and <code class="text-amber">-j4</code> both work.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">-w, --watch</div>
+        <div class="text-sand font-sans text-sm">Re-run whenever a tracked file changes. Ctrl-C to stop.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--no-cache</div>
+        <div class="text-sand font-sans text-sm">Never read from or write to the cache file.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--force</div>
+        <div class="text-sand font-sans text-sm">Ignore cache hits for this run, but still refresh the cache afterward.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--clean</div>
+        <div class="text-sand font-sans text-sm">Delete the cache file. Combine with a task name to clean then run.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">-q, --quiet</div>
+        <div class="text-sand font-sans text-sm">Suppress all decoration. Errors still print.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--verbose</div>
+        <div class="text-sand font-sans text-sm">Print the plan, cache decisions, and total wall-clock time.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">-f, --file PATH</div>
+        <div class="text-sand font-sans text-sm">Use a config file other than <code class="text-amber">birun.bi</code>.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--json [task]</div>
+        <div class="text-sand font-sans text-sm">Print the full task graph, or the plan for one task, as JSON.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--graph</div>
+        <div class="text-sand font-sans text-sm">Emit Graphviz DOT you can pipe into <code class="text-amber">dot -Tsvg</code>.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 border-b border-border/60 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--completion SH</div>
+        <div class="text-sand font-sans text-sm">Print a completion script for bash, zsh, or fish.</div>
+      </div>
+      <div class="grid grid-cols-[minmax(180px,1fr)_2fr] gap-6 px-4 py-3 hover:bg-surface/50 transition-colors">
+        <div class="text-rust">--init</div>
+        <div class="text-sand font-sans text-sm">Write a starter <code class="text-amber">birun.bi</code> into the current directory.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- COMPARISON -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="compare" class="px-6 py-24 bg-bg2">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-14 reveal">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">Chapter four</p>
+      <h2 class="display text-4xl sm:text-5xl font-medium mb-4">Where it sits in the world.</h2>
+      <p class="text-sand max-w-2xl mx-auto leading-relaxed">
+        Every tool below is worth using. The comparison is not "birun is better" — it's "birun is different, and here is exactly how."
+      </p>
+    </div>
+
+    <div class="reveal rounded-lg overflow-x-auto border border-border mb-10">
+      <table class="w-full text-sm">
+        <thead class="bg-surface border-b border-border">
+          <tr>
+            <th class="text-left px-5 py-3 text-xs text-ember uppercase tracking-widest font-medium">Tool</th>
+            <th class="text-left px-5 py-3 text-xs text-ember uppercase tracking-widest font-medium">Config format</th>
+            <th class="text-left px-5 py-3 text-xs text-ember uppercase tracking-widest font-medium">Cache</th>
+            <th class="text-left px-5 py-3 text-xs text-ember uppercase tracking-widest font-medium">Logic</th>
+            <th class="text-left px-5 py-3 text-xs text-ember uppercase tracking-widest font-medium">Runtime</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border/60 text-xs">
+          <tr class="bg-rust/5 border-l-2 border-rust">
+            <td class="px-5 py-3.5 font-medium text-cream">birun</td>
+            <td class="px-5 py-3.5 text-parchment font-mono">birun.bi</td>
+            <td class="px-5 py-3.5 text-sage">content-hash</td>
+            <td class="px-5 py-3.5 text-sage">full language</td>
+            <td class="px-5 py-3.5 text-parchment font-mono">none</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-3.5 text-cream">GNU Make</td>
+            <td class="px-5 py-3.5 text-sand font-mono">Makefile</td>
+            <td class="px-5 py-3.5 text-ember">timestamps</td>
+            <td class="px-5 py-3.5 text-ember">macro only</td>
+            <td class="px-5 py-3.5 text-sand font-mono">sh</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-3.5 text-cream">just</td>
+            <td class="px-5 py-3.5 text-sand font-mono">justfile</td>
+            <td class="px-5 py-3.5 text-ember">none</td>
+            <td class="px-5 py-3.5 text-sand">limited</td>
+            <td class="px-5 py-3.5 text-sand font-mono">sh</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-3.5 text-cream">go-task</td>
+            <td class="px-5 py-3.5 text-sand font-mono">Taskfile.yml</td>
+            <td class="px-5 py-3.5 text-sage">checksum</td>
+            <td class="px-5 py-3.5 text-amber">templating</td>
+            <td class="px-5 py-3.5 text-sand font-mono">none</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-3.5 text-cream">mage</td>
+            <td class="px-5 py-3.5 text-sand font-mono">magefile.go</td>
+            <td class="px-5 py-3.5 text-ember">none</td>
+            <td class="px-5 py-3.5 text-sage">Go code</td>
+            <td class="px-5 py-3.5 text-sand font-mono">Go</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-3.5 text-cream">mask</td>
+            <td class="px-5 py-3.5 text-sand font-mono">maskfile.md</td>
+            <td class="px-5 py-3.5 text-ember">none</td>
+            <td class="px-5 py-3.5 text-ember">none</td>
+            <td class="px-5 py-3.5 text-sand font-mono">sh</td>
+          </tr>
+          <tr>
+            <td class="px-5 py-3.5 text-cream">turbo</td>
+            <td class="px-5 py-3.5 text-sand font-mono">turbo.json</td>
+            <td class="px-5 py-3.5 text-sage">remote</td>
+            <td class="px-5 py-3.5 text-amber">JSON</td>
+            <td class="px-5 py-3.5 text-sand font-mono">Node</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+
+      <div class="reveal rounded-lg bg-surface border border-sage/30 p-6">
+        <h4 class="text-sm font-medium text-sage uppercase tracking-widest mb-4">birun is a fit if</h4>
+        <ul class="space-y-3 text-sm text-sand leading-relaxed">
+          <li class="flex gap-3"><span class="text-sage shrink-0">—</span> You want real logic in your build steps, not templating</li>
+          <li class="flex gap-3"><span class="text-sage shrink-0">—</span> You want caching that survives branch switches and CI restores</li>
+          <li class="flex gap-3"><span class="text-sage shrink-0">—</span> You like single-binary tools that don't drag in a runtime</li>
+          <li class="flex gap-3"><span class="text-sage shrink-0">—</span> You already write shell and want something that reads better</li>
+        </ul>
+      </div>
+
+      <div class="reveal rounded-lg bg-surface border border-wine/30 p-6">
+        <h4 class="text-sm font-medium text-wine uppercase tracking-widest mb-4">birun is not a fit if</h4>
+        <ul class="space-y-3 text-sm text-sand leading-relaxed">
+          <li class="flex gap-3"><span class="text-wine shrink-0">—</span> You need Windows support today. It's planned, not shipped.</li>
+          <li class="flex gap-3"><span class="text-wine shrink-0">—</span> You want remote shared caching for a large monorepo. Use turbo.</li>
+          <li class="flex gap-3"><span class="text-wine shrink-0">—</span> You want the most battle-hardened option available. Use Make.</li>
+          <li class="flex gap-3"><span class="text-wine shrink-0">—</span> You'd rather not learn another small language, even a tiny one.</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- FAQ -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="faq" class="px-6 py-24 bg-bg">
+  <div class="max-w-3xl mx-auto">
+    <div class="text-center mb-14 reveal">
+      <p class="text-xs font-mono text-ember uppercase tracking-[0.2em] mb-3">Objections</p>
+      <h2 class="display text-4xl sm:text-5xl font-medium mb-4">The questions people ask.</h2>
+    </div>
+
+    <div class="space-y-2 reveal">
+
+      <details class="group rounded-lg bg-surface border border-border overflow-hidden hover:border-border2 transition-colors">
+        <summary class="cursor-pointer px-5 py-4 flex items-center justify-between font-medium text-cream">
+          <span>Why not just use Make?</span>
+          <svg class="w-4 h-4 text-ember group-open:rotate-180 transition-transform shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sand text-sm leading-[1.8] space-y-3">
+          <p>
+            Make is forty-eight years old and still excellent at what it does. It is also a macro language pretending to be a build system, and its timestamp-based caching is wrong more often than people realize.
+          </p>
+          <p>
+            If your build is a small DAG of file-to-file transformations, Make is perfectly fine. If your build involves conditionals, environment detection, orchestration of external tools, or anything you would call "logic", the Makefile becomes harder to read than the shell script you started with. birun is for that second case.
+          </p>
+        </div>
+      </details>
+
+      <details class="group rounded-lg bg-surface border border-border overflow-hidden hover:border-border2 transition-colors">
+        <summary class="cursor-pointer px-5 py-4 flex items-center justify-between font-medium text-cream">
+          <span>Is the caching actually correct?</span>
+          <svg class="w-4 h-4 text-ember group-open:rotate-180 transition-transform shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sand text-sm leading-[1.8] space-y-3">
+          <p>
+            We hash the content of every file matching your <code class="text-amber font-mono">inputs()</code> globs, along with the task's own definition — every <code class="text-amber font-mono">run()</code> command, its description, its dependency list, its outputs. If any of those change, the cache invalidates. If none do, the task skips.
+          </p>
+          <p>
+            The one case where we cannot be certain is when a task's behavior depends on something we can't see — a remote service, a file outside your declared inputs, the current time. That is not a bug in birun; it is a bug in the task definition. If your task reads from <code class="text-amber font-mono">/etc/hosts</code> and you did not declare that as an input, the cache will happily serve a stale result. This is true of every caching build system.
+          </p>
+        </div>
+      </details>
+
+      <details class="group rounded-lg bg-surface border border-border overflow-hidden hover:border-border2 transition-colors">
+        <summary class="cursor-pointer px-5 py-4 flex items-center justify-between font-medium text-cream">
+          <span>What is bi, really?</span>
+          <svg class="w-4 h-4 text-ember group-open:rotate-180 transition-transform shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sand text-sm leading-[1.8] space-y-3">
+          <p>
+            bi is a small tree-walking interpreter written in about 1,500 lines of C++. It has two dozen syntax forms. It has no classes, no exceptions to speak of, no module system beyond file imports, and no standard library beyond a fixed set of builtins that birun registers.
+          </p>
+          <p>
+            The design philosophy is: <em class="not-italic text-cream">do not grow.</em> Every feature that gets added to a build language is a feature that everyone using that language has to learn. If a feature can be expressed with what exists, it does not belong in the language. This is why there will never be a "bi 2.0 with generics."
+          </p>
+        </div>
+      </details>
+
+      <details class="group rounded-lg bg-surface border border-border overflow-hidden hover:border-border2 transition-colors">
+        <summary class="cursor-pointer px-5 py-4 flex items-center justify-between font-medium text-cream">
+          <span>What about Windows?</span>
+          <svg class="w-4 h-4 text-ember group-open:rotate-180 transition-transform shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sand text-sm leading-[1.8] space-y-3">
+          <p>
+            Planned. Not shipped. The blocker is not C++ — it is that birun's executor shells out to <code class="text-amber font-mono">popen</code> and reads <code class="text-amber font-mono">waitpid</code>, both of which are POSIX. Windows support requires abstracting that layer behind a small process API, and then testing the whole thing on a platform none of the current contributors use daily.
+          </p>
+          <p>
+            We would rather say "not yet" honestly than ship a Windows port that does something subtly wrong. If you are on Windows and want to help, the executor abstraction is a well-scoped first contribution.
+          </p>
+        </div>
+      </details>
+
+      <details class="group rounded-lg bg-surface border border-border overflow-hidden hover:border-border2 transition-colors">
+        <summary class="cursor-pointer px-5 py-4 flex items-center justify-between font-medium text-cream">
+          <span>Can the cache be shared across a team?</span>
+          <svg class="w-4 h-4 text-ember group-open:rotate-180 transition-transform shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sand text-sm leading-[1.8] space-y-3">
+          <p>
+            Not yet. The cache is a local file at <code class="text-amber font-mono">.birun/cache</code>. You can commit it or sync it via CI artifacts, and it will work — the hash keys are deterministic across machines. But there is no cache server, no S3 backend, no HTTP protocol for retrieving remote entries.
+          </p>
+          <p>
+            Remote caching is on the roadmap, but only after the local model is proven against many real projects. It is easy to build a remote cache. It is hard to build one that never serves a wrong result.
+          </p>
+        </div>
+      </details>
+
+      <details class="group rounded-lg bg-surface border border-border overflow-hidden hover:border-border2 transition-colors">
+        <summary class="cursor-pointer px-5 py-4 flex items-center justify-between font-medium text-cream">
+          <span>Is it production-ready?</span>
+          <svg class="w-4 h-4 text-ember group-open:rotate-180 transition-transform shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sand text-sm leading-[1.8] space-y-3">
+          <p>
+            Depends what you mean. The core is solid — the executor, cache, and parser all have tests, and the tool has been benchmarked against real workloads. It is currently at version <code class="text-amber font-mono">0.6.2</code>, which in semantic versioning means "API may still change."
+          </p>
+          <p>
+            For personal projects and small teams: yes, today. For large production infrastructure: probably wait for 1.0. We would rather underpromise and ship slowly than call something production-ready before it has earned the word.
+          </p>
+        </div>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- CLOSING -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<section class="px-6 py-24 bg-bg2">
+  <div class="max-w-3xl mx-auto text-center reveal">
+
+    <div class="mb-8">
+      <div class="dot-divider mx-auto max-w-xs mb-8"></div>
+    </div>
+
+    <h2 class="display text-4xl sm:text-5xl font-medium mb-6 leading-tight">
+      If it sounds like something<br/>you would use, try it.
+    </h2>
+
+    <p class="text-sand leading-[1.8] mb-10 text-lg">
+      The install is one line. The config file is one file. If you don't like it, <code class="text-amber font-mono text-base">rm ~/.local/bin/birun</code> and nothing is left behind.
+    </p>
+
+    <div class="flex flex-wrap justify-center gap-3 mb-16">
+      <a href="https://github.com/barshansarkar/birun" target="_blank"
+         class="inline-flex items-center gap-2 px-6 py-3 rounded bg-rust hover:bg-copper text-cream font-medium transition-colors">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.31.678.921.678 1.856 0 1.34-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/></svg>
+        Star the repo
+      </a>
+      <a href="https://github.com/barshansarkar/birun/releases" target="_blank"
+         class="inline-flex items-center gap-2 px-6 py-3 rounded border border-border hover:border-border2 text-parchment transition-colors">
+        Download v0.6.2
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+      </a>
+    </div>
+
+    <div class="dot-divider mx-auto max-w-xs mb-10"></div>
+
+    <p class="text-stone text-sm italic font-serif max-w-lg mx-auto leading-relaxed">
+      birun is written and maintained by one person, mostly on weekends.<br/>
+      It is MIT licensed and always will be.
+    </p>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- FOOTER -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<footer class="px-6 py-12 border-t border-border bg-ink">
+  <div class="max-w-5xl mx-auto">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-7 h-7 rounded bg-rust flex items-center justify-center">
+          <span class="display font-bold text-cream text-sm leading-none">b</span>
+        </div>
+        <div class="text-sm">
+          <div class="text-parchment">birun</div>
+          <div class="text-[11px] text-ember font-mono">MIT · © 2026 Barshan Sarkar. made by barshan sarkar with ai</div>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-6 text-sm">
+        <a href="https://github.com/barshansarkar/birun" target="_blank" class="text-sand hover:text-cream transition-colors">GitHub</a>
+        <a href="https://github.com/barshansarkar/birun/releases" target="_blank" class="text-sand hover:text-cream transition-colors">Releases</a>
+        <a href="https://github.com/barshansarkar/birun/issues" target="_blank" class="text-sand hover:text-cream transition-colors">Issues</a>
+        <a href="https://github.com/barshansarkar/birun/blob/main/LICENSE" target="_blank" class="text-sand hover:text-cream transition-colors">License</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+function copyInstall() {
+  const text = document.getElementById('install-cmd').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const icon = document.getElementById('copy-icon');
+    const orig = icon.innerHTML;
+    icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>';
+    icon.classList.add('text-sage');
+    setTimeout(() => {
+      icon.innerHTML = orig;
+      icon.classList.remove('text-sage');
+    }, 1800);
+  });
+}
+
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('in');
+      io.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.08, rootMargin: '0px 0px -60px 0px' });
+
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>
